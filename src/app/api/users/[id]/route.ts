@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabase } from '@/lib/supabase';
 
 // GET /api/users/[id] - fetch a single user by user_id
 export async function GET(
-    _request: Request,
-    context: { params: { id: string } }
+    _request: NextRequest,
+    context: { params: Promise<{ id: string }> }
 ) {
-    const userId = context.params.id;
+    const { id: userId } = await context.params;
 
     const { data, error } = await supabase
         .from('users')
