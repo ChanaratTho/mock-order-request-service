@@ -87,33 +87,53 @@ export default function OrderClient() {
         }
     }
 
-    async function mockPost(_url: string, _body: unknown) {
-        // mark as used to satisfy lint rules
-        void _url;
-        void _body;
-        // MOCK sending to lambda — simulate network latency and success
-        return new Promise<{ status: number; ok: boolean }>((resolve) => {
-            setTimeout(() => resolve({ status: 200, ok: true }), randInt(200, 800));
-        });
+    // Real POST helper with timeout using AbortController
+    async function postWithTimeout(url: string, body: unknown, timeoutMs = 10000) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const res = await fetch(url, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+            return res;
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     async function handleSubmit() {
         if (!generated || generated.length === 0) return;
+        if (!lambdaUrl || !/^https?:\/\//i.test(lambdaUrl)) {
+            alert("กรุณาระบุ Lambda URL ที่ถูกต้อง (ต้องขึ้นต้นด้วย http/https)");
+            return;
+        }
         setSubmitting(true);
         setSubmitLog([]);
         try {
             for (let i = 0; i < generated.length; i++) {
                 const payload = generated[i];
-                // MOCK call (no real network). Replace mockPost with real fetch if needed.
-                const res = await mockPost(lambdaUrl, payload);
-                setSubmitLog((logs) => [
-                    ...logs,
-                    res.ok
-                        ? `ส่ง order_id=${payload.order.order_id} สำเร็จ (200)`
-                        : `ส่ง order_id=${payload.order.order_id} ล้มเหลว (${res.status})`,
-                ]);
+                try {
+                    const res = await postWithTimeout(lambdaUrl, payload, 15000);
+                    setSubmitLog((logs) => [
+                        ...logs,
+                        res.ok
+                            ? `ส่ง order_id=${payload.order.order_id} สำเร็จ (${res.status})`
+                            : `ส่ง order_id=${payload.order.order_id} ล้มเหลว (${res.status})`,
+                    ]);
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.name : "unknown";
+                    setSubmitLog((logs) => [
+                        ...logs,
+                        `ส่ง order_id=${payload.order.order_id} ล้มเหลว (network: ${msg})`,
+                    ]);
+                }
             }
-            alert("จำลองการส่งเรียบร้อย");
+            alert("ส่งคำสั่งซื้อเรียบร้อย (เรียกใช้งานจริง)");
         } finally {
             setSubmitting(false);
         }
