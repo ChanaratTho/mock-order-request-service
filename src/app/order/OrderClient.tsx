@@ -61,10 +61,13 @@ function generateOrderPayloads(numOrders: number): OrderPayload[] {
 
 export default function OrderClient() {
     const [count, setCount] = useState<number>(1);
+    const [startOrderId, setStartOrderId] = useState<number>(1);
     const [lambdaUrl, setLambdaUrl] = useState<string>("https://example.com/order");
     const [generated, setGenerated] = useState<OrderPayload[] | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [submitLog, setSubmitLog] = useState<string[]>([]);
+    const [editorText, setEditorText] = useState<string>("");
+    const [editorError, setEditorError] = useState<string>("");
 
     const preview = useMemo(() => {
         if (!generated) return "";
@@ -73,7 +76,15 @@ export default function OrderClient() {
 
     function handleGenerate() {
         const n = Math.max(1, Math.min(30, Number.isFinite(count) ? count : 1));
-        setGenerated(generateOrderPayloads(n));
+        const base = generateOrderPayloads(n);
+        // apply starting order_id
+        const adjusted = base.map((o, idx) => ({
+            ...o,
+            order: { ...o.order, order_id: String(startOrderId + idx) },
+        }));
+        setGenerated(adjusted);
+        setEditorText(JSON.stringify(adjusted, null, 2));
+        setEditorError("");
         setSubmitLog([]);
     }
 
@@ -106,8 +117,40 @@ export default function OrderClient() {
         }
     }
 
+    function applyEditorChanges() {
+        try {
+            const parsed = JSON.parse(editorText);
+            if (!Array.isArray(parsed)) {
+                setEditorError("รูปแบบ JSON ต้องเป็น Array ของ orders");
+                return;
+            }
+            // minimal shape check
+            for (const it of parsed) {
+                if (!it?.order || typeof it.order.order_id === "undefined") {
+                    setEditorError("แต่ละรายการต้องมี field order และ order.order_id");
+                    return;
+                }
+            }
+            setGenerated(parsed as OrderPayload[]);
+            setEditorError("");
+            setSubmitLog([]);
+            alert("อัปเดตจาก JSON แล้ว");
+        } catch (e) {
+            setEditorError("JSON ไม่ถูกต้อง: " + (e instanceof Error ? e.message : String(e)));
+        }
+    }
+
     async function handleSubmit() {
-        if (!generated || generated.length === 0) return;
+        // Prefer the currently edited JSON if valid
+        let toSend: OrderPayload[] | null = generated;
+        try {
+            const parsed = JSON.parse(editorText);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                toSend = parsed as OrderPayload[];
+            }
+        } catch { /* ignore, fallback to generated */ }
+
+        if (!toSend || toSend.length === 0) return;
         if (!lambdaUrl || !/^https?:\/\//i.test(lambdaUrl)) {
             alert("กรุณาระบุ URL ที่ถูกต้อง (ต้องขึ้นต้นด้วย http/https)");
             return;
@@ -115,8 +158,8 @@ export default function OrderClient() {
         setSubmitting(true);
         setSubmitLog([]);
         try {
-            for (let i = 0; i < generated.length; i++) {
-                const payload = generated[i];
+            for (let i = 0; i < toSend.length; i++) {
+                const payload = toSend[i];
                 try {
                     // Call server proxy so the actual send happens on the server
                     const res = await postWithTimeout("/api/order", { url: lambdaUrl, payload }, 20000);
@@ -161,6 +204,18 @@ export default function OrderClient() {
                 </div>
 
                 <div className="space-y-2">
+                    <label className="block text-sm font-medium">เริ่ม order_id จาก</label>
+                    <input
+                        type="number"
+                        min={-1_000_000_000}
+                        max={1_000_000_000}
+                        value={startOrderId}
+                        onChange={(e) => setStartOrderId(Number(e.target.value))}
+                        className="w-full border rounded px-3 py-2"
+                    />
+                </div>
+
+                <div className="space-y-2">
                     <label className="block text-sm font-medium">ปลายทาง (URL ที่จะส่งจากฝั่งเซิร์ฟเวอร์)</label>
                     <input
                         type="text"
@@ -179,19 +234,29 @@ export default function OrderClient() {
                 >
                     สร้างตัวอย่าง JSON
                 </button>
-                <button
-                    onClick={handleCopy}
-                    disabled={!generated}
-                    className="border rounded px-4 py-2 disabled:opacity-50"
-                >
-                    คัดลอก JSON
-                </button>
             </div>
 
             {generated && (
-                <pre className="border rounded p-3 overflow-auto text-sm bg-gray-50">
-                    {preview}
-                </pre>
+                <div className="space-y-2">
+                    <label className="block text-sm font-medium">แก้ไข JSON ก่อนส่ง (แก้ไขได้)</label>
+                    <textarea
+                        value={editorText}
+                        onChange={(e) => setEditorText(e.target.value)}
+                        className="w-full border rounded p-3 font-mono text-sm h-64"
+                        spellCheck={false}
+                    />
+                    {editorError && (
+                        <div className="text-sm text-red-600">{editorError}</div>
+                    )}
+                    <div className="flex gap-2">
+                        <button onClick={applyEditorChanges} className="border rounded px-4 py-2">
+                            นำไปใช้ (Apply JSON)
+                        </button>
+                        <button onClick={handleCopy} disabled={!generated} className="border rounded px-4 py-2 disabled:opacity-50">
+                            คัดลอก JSON
+                        </button>
+                    </div>
+                </div>
             )}
 
             <div className="flex items-center gap-2">
