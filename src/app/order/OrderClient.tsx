@@ -108,17 +108,14 @@ export default function OrderClient() {
 
     async function handleSubmit() {
         if (!generated || generated.length === 0) return;
-        if (!lambdaUrl || !/^https?:\/\//i.test(lambdaUrl)) {
-            alert("กรุณาระบุ Lambda URL ที่ถูกต้อง (ต้องขึ้นต้นด้วย http/https)");
-            return;
-        }
         setSubmitting(true);
         setSubmitLog([]);
         try {
             for (let i = 0; i < generated.length; i++) {
                 const payload = generated[i];
                 try {
-                    const res = await postWithTimeout(lambdaUrl, payload, 15000);
+                    // Call server proxy so the actual send happens on the server
+                    const res = await postWithTimeout("/api/order", { url: lambdaUrl, payload }, 20000);
                     setSubmitLog((logs) => [
                         ...logs,
                         res.ok
@@ -133,7 +130,7 @@ export default function OrderClient() {
                     ]);
                 }
             }
-            alert("ส่งคำสั่งซื้อเรียบร้อย (เรียกใช้งานจริง)");
+            alert("ส่งคำสั่งซื้อเรียบร้อย (ผ่าน /api/order)");
         } finally {
             setSubmitting(false);
         }
@@ -157,7 +154,7 @@ export default function OrderClient() {
                 </div>
 
                 <div className="space-y-2">
-                    <label className="block text-sm font-medium">Lambda URL (Mock)</label>
+                    <label className="block text-sm font-medium">ปลายทาง (URL ที่จะส่งจากฝั่งเซิร์ฟเวอร์)</label>
                     <input
                         type="text"
                         value={lambdaUrl}
@@ -196,9 +193,9 @@ export default function OrderClient() {
                     disabled={!generated || submitting}
                     className="bg-green-600 text-white rounded px-4 py-2 disabled:opacity-50"
                 >
-                    ยืนยัน (Mock ส่งไป Lambda)
+                    ยืนยัน (ส่งผ่าน Server /api/order)
                 </button>
-                {submitting && <span className="text-sm text-gray-600">กำลังจำลองการส่ง…</span>}
+                {submitting && <span className="text-sm text-gray-600">กำลังส่ง…</span>}
             </div>
 
             {submitLog.length > 0 && (
@@ -211,10 +208,6 @@ export default function OrderClient() {
                     </ul>
                 </div>
             )}
-
-            <div className="text-xs text-gray-500">
-                หมายเหตุ: หน้านี้เป็นการจำลอง (mock) เท่านั้น หากต้องการยิงจริง ให้แทนที่ฟังก์ชัน mockPost ด้วย fetch ไปยัง Lambda URL ของจริง
-            </div>
         </div>
     );
 }
