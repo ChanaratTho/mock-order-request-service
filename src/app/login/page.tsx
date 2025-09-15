@@ -80,9 +80,6 @@ export default function LoginPage() {
                 >
                     {loading ? "Signing in..." : "Sign in"}
                 </button>
-                <p className="text-xs text-gray-500">
-                    Tip: username <code>adminG4</code>, password <code>Pass@cs341</code>
-                </p>
             </form>
         </div>
     );
