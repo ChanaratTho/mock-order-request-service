@@ -34,7 +34,7 @@ async function retry<T>(fn: () => Promise<T>, retries = 2, baseDelayMs = 400): P
   throw lastErr;
 }
 
-type ProxyBody = { url?: string; payload?: unknown } | unknown;
+type ProxyBody = { url?: string; payload?: unknown; headers?: Record<string, string> } | unknown;
 
 export async function POST(req: NextRequest) {
   try {
@@ -45,11 +45,14 @@ export async function POST(req: NextRequest) {
     // 2) raw payload + use env URL
     let targetUrl: string | undefined;
     let payload: unknown;
+    let extraHeaders: Record<string, string> | undefined;
 
     if (incoming && typeof incoming === "object" && "url" in incoming) {
-      const b = incoming as { url?: string; payload?: unknown };
+      const b = incoming as { url?: string; payload?: unknown; headers?: Record<string, string> };
       targetUrl = b.url;
       payload = b.payload;
+      // Optional client-provided headers
+      extraHeaders = b.headers;
     } else {
       payload = incoming;
       if (API_BASE_URL) {
@@ -64,8 +67,18 @@ export async function POST(req: NextRequest) {
 
     const headers: Record<string, string> = {
       "content-type": "application/json",
+      accept: "*/*",
     };
+    // Merge extra headers, skipping restricted ones
+    if (extraHeaders) {
+      for (const [k, v] of Object.entries(extraHeaders)) {
+        const key = k.toLowerCase();
+        if (["host", "content-length"].includes(key)) continue;
+        headers[key] = v;
+      }
+    }
 
+    const startedAt = Date.now();
     const doCall = () =>
       fetchWithTimeout(targetUrl!, {
         method: "POST",
@@ -75,6 +88,10 @@ export async function POST(req: NextRequest) {
       }).then(async (res) => {
         const requestId = res.headers.get("x-amzn-requestid") || res.headers.get("x-amz-request-id");
         const text = await res.text();
+        // basic server logging
+        console.log(
+          `[/api/order] -> ${targetUrl} status=${res.status} timeMs=${Date.now() - startedAt} reqId=${requestId ?? ""}`
+        );
         if (!res.ok) {
           const errShape = { status: res.status, requestId, upstream: safeJson(text) };
           throw new Error(JSON.stringify(errShape));

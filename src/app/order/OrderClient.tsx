@@ -108,6 +108,10 @@ export default function OrderClient() {
 
     async function handleSubmit() {
         if (!generated || generated.length === 0) return;
+        if (!lambdaUrl || !/^https?:\/\//i.test(lambdaUrl)) {
+            alert("กรุณาระบุ URL ที่ถูกต้อง (ต้องขึ้นต้นด้วย http/https)");
+            return;
+        }
         setSubmitting(true);
         setSubmitLog([]);
         try {
@@ -116,11 +120,14 @@ export default function OrderClient() {
                 try {
                     // Call server proxy so the actual send happens on the server
                     const res = await postWithTimeout("/api/order", { url: lambdaUrl, payload }, 20000);
+                    const reqId = res.headers.get("x-upstream-request-id") || "";
+                    const text = await res.text();
+                    const short = text.length > 200 ? text.slice(0, 200) + "..." : text;
                     setSubmitLog((logs) => [
                         ...logs,
                         res.ok
-                            ? `ส่ง order_id=${payload.order.order_id} สำเร็จ (${res.status})`
-                            : `ส่ง order_id=${payload.order.order_id} ล้มเหลว (${res.status})`,
+                            ? `ส่ง order_id=${payload.order.order_id} สำเร็จ (${res.status})${reqId ? ` [reqId:${reqId}]` : ""}`
+                            : `ส่ง order_id=${payload.order.order_id} ล้มเหลว (${res.status})${reqId ? ` [reqId:${reqId}]` : ""} → ${short}`,
                     ]);
                 } catch (err: unknown) {
                     const msg = err instanceof Error ? err.name : "unknown";
